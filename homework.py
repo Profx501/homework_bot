@@ -1,6 +1,7 @@
 import time
 import logging
 import os
+import json
 from http import HTTPStatus
 
 import requests
@@ -37,26 +38,7 @@ logging.basicConfig(
 
 def check_tokens():
     """Проверяет доступность переменных окружения."""
-    token = True
-    if PRACTICUM_TOKEN is None:
-        token = False
-        logging.critical(
-            f'Отсутствует обязательная переменная окружения:{PRACTICUM_TOKEN}'
-            f'Программа принудительно остановлена.'
-        )
-    if TELEGRAM_TOKEN is None:
-        token = False
-        logging.critical(
-            f'Отсутствует обязательная переменная окружения:{TELEGRAM_TOKEN}'
-            f'Программа принудительно остановлена.'
-        )
-    if TELEGRAM_CHAT_ID is None:
-        token = False
-        logging.critical(
-            f'Отсутствует обязательная переменная окружения:{TELEGRAM_CHAT_ID}'
-            f'Программа принудительно остановлена.'
-        )
-    return token
+    return all((PRACTICUM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_TOKEN))
 
 
 def send_message(bot, message):
@@ -73,6 +55,7 @@ def send_message(bot, message):
 def get_api_answer(timestamp):
     """Делает запрос к API-сервису."""
     try:
+        logging.debug('Бот делает запрос!')
         response = requests.get(
             ENDPOINT,
             headers={'Authorization': f'OAuth {PRACTICUM_TOKEN}'},
@@ -90,6 +73,10 @@ def get_api_answer(timestamp):
         return response.json()
     except requests.RequestException as error:
         logging.error(f'Код ответа API: {error}')
+        raise AnswerError(f'Код ответа API: {error}')
+    except json.JSONDecodeError as json_error:
+        logging.error(f'Код ответа API: {json_error}')
+        raise json.JSONDecodeError(f'Код ответа API: {json_error}')
 
 
 def check_response(response):
@@ -123,6 +110,10 @@ def parse_status(homework):
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
+        logging.critical(
+            'Отсутствует обязательная переменная окружения!'
+            ' Программа принудительно остановлена.'
+        )
         exit()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
@@ -134,10 +125,10 @@ def main():
             homework = check_response(response)
             message = parse_status(homework)
             send_message(bot, message)
-            time.sleep(RETRY_PERIOD)
         except Exception as error:
             message_error = f'Ошибка: {error}'
             send_message(bot, message_error)
+        finally:
             time.sleep(RETRY_PERIOD)
 
 
